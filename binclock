@@ -1,0 +1,47 @@
+#!/bin/bash
+# Glen Wiley <glen.wiley@gmail.com>
+#
+
+showdate=0
+
+function usage
+{
+	echo "USAGE: binclock [-d]"
+	echo ""
+	echo "-d   display date and time (default is time, no date)"
+	echo ""
+	echo "Display a running clock in binary."
+	echo ""
+	echo "Glen Wiley <glen.wiley@gmail.com>"
+}
+
+while getopts "?d" opt
+do
+	case $opt in
+		d) showdate=1;;
+		?) usage; exit 1;
+	esac
+done
+
+echo ""
+
+while (( 1 ))
+do
+	dt=$(date "+%y;%m;%d;%H;%M;%S")
+	set -- $(echo "obase=2;$dt" | bc)
+	yr=$1
+	mo=$2
+	da=$3
+	hr=$4
+	mn=$5
+	se=$6
+		
+	if [ $showdate == 1 ]
+	then
+		printf "%0.8d/%0.8d/%0.8d %0.8d %0.8d %0.8d\r" $yr $mo $da $hr $mn $se
+	else
+		printf "%0.8d %0.8d %0.8d\r" $hr $mn $se
+	fi
+	sleep 1
+done
+# end

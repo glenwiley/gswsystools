@@ -1,0 +1,76 @@
+#!/bin/bash
+# Glen Wiley <gwiley@verisign.com>
+#
+# shell stopwatch, count down and duration timer
+#
+
+beeps=0
+cdown=0
+showhms=0
+
+function usage
+{
+	echo "USAGE: stopwatch [-t] [-b <beeps>] [-d <seconds>]"
+	echo ""
+	echo "-b <beeps>   play the specified number of bells/beeps when done"
+	echo "-d <seconds> count down specified seconds"
+	echo "-t           show elapsed time in hr/min/sec rather than just seconds"
+	echo ""
+	echo "Simple stop watch and countdown timer. Default mode is to count"
+	echo "elapsed time in seconds (press CTL-C to exit)."
+	echo ""
+	echo "Glen Wiley <glen.wiley@gmail.com>"
+}
+
+while getopts "?b:d:t" opt
+do
+	case $opt in
+		b) beeps=$OPTARG;;
+		d) cdown=$OPTARG;;
+		t) showhms=1;;
+		?) usage; exit 1;
+	esac
+done
+
+# if a contdown time was specified then count down, else count elapsed
+if (( cdown > 0 ))
+then
+	while (( cdown > 0 ))
+	do
+		echo -ne "\r  $cdown \r"
+		sleep 1
+		cdown=$(( cdown - 1 ))
+	done
+
+	while (( beeps > 0 ))
+	do
+		echo ""
+		beeps=$(( beeps - 1 ))
+	done
+else
+	elapsed=0
+	startsec=$(date "+%s")
+
+	echo ""
+
+	while (( 1 ))
+	do
+		if (( showhms == 1 ))
+		then
+			nowsec=$(date "+%s")
+			nowsec=$(( nowsec - startsec ))
+			hr=$(( nowsec / (60 * 60) ))
+			mn=$(( (nowsec - (hr * 60 * 60)) / 60 ))
+			se=$(( (nowsec - (hr * 60 * 60) - (mn * 60)) ))
+
+			printf "\r%0.2d:%0.2d:%0.2d   " $hr $mn $se
+		else
+			echo -ne "\r  $elapsed \r"
+			elapsed=$(( elapsed + 1 ))
+		fi
+
+		sleep 1
+	done
+fi
+
+# end stopwatch

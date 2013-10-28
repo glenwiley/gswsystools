@@ -1,0 +1,388 @@
+#!/bin/bash
+# $Id: mvuser,v 1.18 2007/10/04 13:26:02 gwiley Exp gwiley $
+# Glen Wiley <gwiley@verisign.com>
+#
+# script used to move users from aimee-qa into QAI
+#
+# TODO: smart translate group numbers as needed
+# TODO: smart translate home directories as needed (solaris/linux)
+
+tmpdir="/tmp/mvuser.$$"
+mvuserrev='$Id: mvuser,v 1.18 2007/10/04 13:26:02 gwiley Exp gwiley $'
+
+tarbin=tar
+
+os=$(uname -s)
+
+if [ $os == "SunOS" ]
+then
+	tarbin=/usr/local/bin/tar
+	if [ ! -x $tarbin ]
+	then
+		echo "we need GNU tar, on $os I am looking for $tarbin, exiting"
+		exit 1
+	fi
+fi
+
+#---------------------------------------- usage
+function usage
+{
+	echo "USAGE: mvuser [-nf] [-H <home>] -p|i -g <group> | <user1> <user2> ... <usern>"
+	echo "-f             use with -i to continue in spite of existing users"
+	echo "-H <home>      use an alternative root home dir during -i/install"
+	echo "-i             install user data on current host"
+	echo "-p             package user data from current host"
+	echo "-n             no backups of /etc files (be careful)"
+	echo "-g <group>     use with -p, package all users in the specified group"
+	echo "-f             force during -i, ignore pre-existing users"
+	echo ""
+	echo "Each username specified on the command line is packaged or"
+	echo "installed (depending on whether -i or -p is specified."
+	echo ""
+	echo "To copy an account on host A to host B you might:"
+	echo "  root@hostA# mvuser -p workerbee"
+	echo "  root@hostA# scp workerbee.user hostB:."
+	echo "  root@hostA# ssh hostB"
+	echo "  root@hostB# mvuser -i workerbee"
+	exit 1
+} # usage
+
+#---------------------------------------- mkbak
+# create a numbered backup of the specified file
+function mkbak
+{
+	src=$1
+	maxnum=100
+
+	let n=1
+	dst=$(printf "$src.%02d" $n)
+	while [ -e $dst ]
+	do
+		let n=n+1
+		dst=$(printf "$src.%02d" $n)
+		if [ $n -gt $maxnum ]
+		then
+			msg=""
+			[ $maxnum -eq 1 ] && msg="s"
+			echo "mkbak: no backup made for $src, $maxnum already exist$msg" >&2
+			retval=1
+			dst=""
+			break
+		fi
+	done
+
+	if [ ! -z "$dst" ]
+	then
+		cp -p $src $dst
+		retval=$?
+	fi
+
+	return $retval
+} # mkbak
+
+#---------------------------------------- grpusers
+# get a list of users for a given group
+function grpusers
+{
+	grp=$1
+	set -- $(grep "^$grp:" /etc/group | sed 's/:/ /g')
+	gid=$3
+
+	# users according to group 
+	users=$(grep "^$grp:" /etc/group | sed -e 's/^.*://g' -e 's/,/ /g')
+
+	# users according to passwd
+	pwusrs=$(grep "^.*:.*:.*:$gid:" /etc/passwd | sed 's/:.*//g')
+
+	echo "$users $pwusrs" | sed 's/ /\n/g' | sort -u
+} # grpusers
+
+#---------------------------------------- main script starts here
+
+if [ $# -eq 0 ]
+then
+	usage
+	exit 1
+fi
+
+if [ "$UID" != "0" ]
+then
+	echo "this script must be run as root, thanks."
+	exit 1
+fi
+
+#-------------------- handle command line
+
+usernames=""
+mode=""
+backup="yes"
+althome=""
+grp=""
+force="no"
+
+while getopts "fg:H:inp" opt
+do
+	case "$opt" in
+		f) force="yes";;
+		g) grp="$OPTARG"; usernames="$usernames $(grpusers $grp)";;
+		H) althome=$(echo $OPTARG | sed 's/\//\\\//g');;
+		i) mode="install";;
+		n) backup="no";;
+		p) mode="package";;
+		?) usage; exit 1;
+	esac
+done
+
+# move the command line so that we can see all of the user names
+
+OPTIND=$(( OPTIND - 1 ))
+shift $OPTIND
+usernames="$usernames $@"
+
+# add folks from the specified group
+
+[ -z "$usernames" ] && echo "no user name specified, exiting.\n" && exit 1
+[ -z $mode ] && echo "specify whether you want to package (-p) or install (-i) users, exiting." && exit 1
+
+#-------------------- create user package
+
+if [ "$mode" == "package" ]
+then
+	for usernm in $usernames
+	do
+		echo "$usernm"
+
+		mkdir -p $tmpdir
+		if [ $? -ne 0 ]
+		then
+			echo "   failed to create temporary directory $tmpdir, skipping user"
+			rm -Rf $tmpdir
+			continue
+		fi
+		chmod 700 $tmpdir
+
+		grep "$usernm" /etc/passwd > $tmpdir/passwd
+		if [ $? -ne 0 ]
+		then
+			echo "   user not in /etc/passwd, skipping user"
+			rm -Rf $tmpdir
+			continue
+		fi
+
+		grep "$usernm" /etc/shadow > $tmpdir/shadow
+		if [ $? -ne 0 ]
+		then
+			echo "user not in /etc/shadow, skipping user"
+			rm -Rf $tmpdir
+			continue
+		fi
+	
+		# grab the entry in /etc/group for the user's primary group 
+		# then grab entries for any groups he is a member of
+
+		IFS=":"
+		pflds=( $(grep "$usernm" /etc/passwd ) )
+		homedir="${pflds[5]}"
+		grep ":${pflds[3]}:" /etc/group > $tmpdir/group.a
+		grep "$usernm" /etc/group >> $tmpdir/group.a
+		sort -u $tmpdir/group.a > $tmpdir/group
+		rm -f $tmpdir/group.a
+
+		# grab the important ssh files
+
+		if [ -d $homedir/.ssh ]
+		then
+			$tarbin -c -C $homedir -f $tmpdir/ssh.tar .ssh/known_hosts .ssh/authorized_keys .ssh/*pub .ssh/config >/dev/null 2>&1
+			# since we untar this separately we need to preserve owner separately
+			ls -ld $homedir/.ssh | awk '{print $3 ":" $4;}' > $tmpdir/mvuser_sshown
+		fi
+
+		# preserve the important environment files
+
+		$tarbin -r -C $homedir -f $tmpdir/env.tar .bash* .exrc .vim* .profile .*shrc .login .logout >/dev/null 2>&1
+
+		echo "user package created by mvuser" > $tmpdir/mvuser_version
+		echo "$mvuserrev" >> $tmpdir/mvuser_version
+		$tarbin -c -C $tmpdir -f $usernm.user .
+		rm -Rf $tmpdir
+
+		echo "   $usernm.user created"
+	done # for usernm in usernames
+fi # if mode is to create a package
+
+#-------------------- install user package
+
+if [ "$mode" == "install" ]
+then
+	# create backups and make sure that we won't clobber anything
+
+	if [ $backup == "yes" ]
+	then
+		mkbak /etc/passwd
+		if [ $? -ne 0 ]
+		then
+			echo "error, unable to create backup for /etc/passwd, exiting"
+			rm -Rf $tmpdir
+			exit 1
+		fi
+		mkbak /etc/shadow
+		if [ $? -ne 0 ]
+		then
+			echo "error, unable to create backup for /etc/shadow, exiting"
+			rm -Rf $tmpdir
+			exit 1
+		fi
+		mkbak /etc/group
+		if [ $? -ne 0 ]
+		then
+			echo "error, unable to create backup for /etc/group, exiting"
+			rm -Rf $tmpdir
+			exit 1
+		fi
+	fi
+
+	for usernm in $usernames
+	do
+		# remove file suffix in case they got username via shell wildcard
+		usernm=${usernm%%.user}
+
+		echo "installing user $usernm"
+
+		# we need to do some basic sanity checks, unpackage the user data
+		# and ensure that we will be able to succeed before we start mucking with
+		# the system (or at least have some degree of confidence)
+
+		grep "^$usernm:" /etc/passwd >/dev/null
+		if [ $? -eq 0 ]
+		then
+			if [ $force == "yes" ]
+			then
+				echo "   user already in /etc/passwd, continuing"
+			else
+				echo "   user already in /etc/passwd, skipping user"
+				continue
+			fi
+		fi
+
+		if [ ! -f "$usernm.user" ]
+		then
+			echo "   missing user package file $usernm.user, skipping user"
+			continue
+		fi
+
+		mkdir -p $tmpdir
+		if [ $? -ne 0 ]
+		then
+			echo "   error creating temp dir $tmpdir, skipping user"
+			continue
+		fi
+		chmod 700 $tmpdir
+
+		$tarbin -x -C $tmpdir -f $PWD/$usernm.user
+
+		if [ ! -f $tmpdir/passwd ]
+		then
+			echo "   user package missing passwd file, skipping user"
+			rm -Rf $tmpdir
+			continue
+		fi
+
+		# translate home directory in the passwd entry
+
+		if [ ! -z $althome ]
+		then
+			sed "s/:\/home/:$althome/" $tmpdir/passwd > $tmpdir/passwd.tmp
+			mv $tmpdir/passwd.tmp $tmpdir/passwd
+		fi
+
+		IFS=":"
+		pflds=( $(grep "^$usernm" $tmpdir/passwd) )
+		unset IFS
+
+		homedir=${pflds[5]}
+		userid=${pflds[2]}
+		prgrp=${pflds[3]}
+
+		# install user home directory
+
+		if [ -d $homedir ]
+		then
+			echo "   home directory $homedir exists, skipping user"
+			rm -Rf $tmpdir
+			continue
+		else
+			mkdir -p $homedir
+			if [ $? -ne 0 ]
+			then
+				echo "   error creating home directory $homedir, skipping user"
+				rm -Rf $tmpdir
+				continue
+			fi
+		fi
+
+		if [ $os == "SunOS" ]
+		then
+			egrep ":$userid:[0-9]+:" /etc/passwd >/dev/null
+		else
+			grep -E ":$userid:[0-9]+:" /etc/passwd >/dev/null
+		fi
+
+		# make changes to the system files
+
+		grep "$usernm" /etc/passwd >/dev/null
+		if [ $? -ne 0 ]
+		then
+			cat $tmpdir/passwd >> /etc/passwd
+			cat $tmpdir/shadow >> /etc/shadow
+		fi
+
+		# only add group entries if they are not already there
+
+		exec 4<$tmpdir/group
+		while read -u4 gln
+		do
+			IFS=":"
+			gflds=( $gln )
+			unset IFS
+			grpnm="${gflds[0]}"
+
+			grep "^$grpnm:" /etc/group >/dev/null
+			if [ $? -ne 0 ]
+			then
+				echo "$gln" >> /etc/group
+			else
+				# if group line already there make sure they are a member
+
+				grep "^$grpnm:" /etc/group | grep "[:,]$usernm" >/dev/null
+				if [ $? -ne 0 ]
+				then
+					sed "/^$grpnm:/ s/\$/,$usernm/" /etc/group > $tmpdir/etcgroup
+					cp $tmpdir/etcgroup /etc/group
+				fi
+			fi
+		done
+		exec 4<&-
+
+		chown $usernm:$prgrp $homedir
+
+		if [ -f $tmpdir/ssh.tar ]
+		then
+			$tarbin -C $homedir -xf $tmpdir/ssh.tar 
+			if [ -f $tmpdir/mvuser_sshown ]
+			then
+				chown $(cat $tmpdir/mvuser_sshown) $homedir/.ssh
+			fi
+		fi
+
+		if [ -f $tmpdir/env.tar ]
+		then
+			$tarbin -C $homedir -xf $tmpdir/env.tar
+		fi
+
+		rm -Rf $tmpdir
+
+		echo "done"
+	done # for usernm in usernames
+fi # if mode == install
+
+# end mvuser

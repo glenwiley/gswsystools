@@ -1,0 +1,38 @@
+#!/bin/bash
+# Glen Wiley <glen.wiley@gmail.com>
+#
+# this script expects a mail message on stdin
+# the addresses listed in the "from" header are added to the whitelist
+#
+# TODO: deal with missing input on stdin
+# TODO: find .whitelist
+# TODO: error messages
+
+VERSION="1.0"
+fn_whitelist=$HOME/.whitelist
+fn_tmp=/tmp/whitelist.$$
+
+[ ! -f $fn_whitelist ] && echo "$fn_whitelist does not exist, exiting..." && exit 1
+
+addrs=$(formail -x from | tr ' ' '\n' | grep "@")
+
+echo "whitelist $VERSION Glen Wiley <glen.wiely@gmail.com>"
+echo "adding addresses to $fn_whitelist"
+echo "$addrs"
+
+echo "$addrs" | cat - $fn_whitelist | sort -u >$fn_tmp
+
+oldlines=$(wc -l $fn_whitelist | cut -d ' ' -f1,1)
+newlines=$(wc -l $fn_tmp | cut -d ' ' -f1,1)
+if [[ $newlines -lt $oldlines ]]
+then
+	echo "ERROR: There are fewer lines in the resulting list than in the current"
+	echo "whitelist file, abandoning...(make sure your current whitelist has"
+	echo "no duplicate entries and try again."
+else
+	cp $fn_tmp $fn_whitelist
+fi
+
+rm -f $fn_tmp
+
+# end whitelist

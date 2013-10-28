@@ -1,0 +1,15 @@
+#!/bin/bash
+# $Id: getsolnics,v 1.2 2007/03/02 20:33:52 gwiley Exp gwiley $
+# Glen Wiley <glen.wiley@gmail.com>
+#
+# print a list of solaris NICs
+
+type kstat >/dev/null 2>/dev/null
+
+if [ $? -ne 0 ]
+then
+	echo "error, kstat not available, exiting"
+	exit 1
+fi
+
+kstat -p :::opackets | grep -v "lo0:" | sed -e 's/^.*:[0-9]*://' -e 's/:.*//' -e 's/\/.*//' | sort -u
