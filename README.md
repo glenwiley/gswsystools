@@ -9,6 +9,7 @@ to justify a separate repo for each.  This includes:
 * ipaddr: shell script used to convert ip addresses to integers and back
 * memhog.c: used to stress the system by consuming memory
 * mvuser: shell script that packages/unpackages user credentials for moving a user to a different host
+* shmtst.c: exercise shared memory access for basic benchmarking
 * sizes.c: simple program to print the size (in bytes) of some fundamental data types
 * stopwatch: bash script count up timer and countdown timer
 * whitelist: bash script that extracts addresses from a mail message and adds them to a whitelist
@@ -140,6 +141,54 @@ To copy an account on host A to host B you might:
 
 ##Platforms
 * Linux
+* Solaris
+
+#shmtst.c
+
+Exercise basis shared memory access for simple benchmarking.
+
+```
+gwiley-reisende:gswsystools gwiley$ ./shmtst -?
+USAGE: shmtst [-v] [-i <niter>] [-k <file>] [-p <proj>] -s <size>
+
+  -i <niter>  number of iterations, default=5
+  -k <file>   file name used to generate shm key, default=this executable
+  -p <proj>   project number used to generate shm key, default=0
+  -s <size>   shared memory size in bytes
+              (specify K, M, G for kilo, mega, giga bytes)
+
+  -v          verbose, display more diagnostic messages
+
+```
+
+```
+gwiley-reisende:gswsystools gwiley$ ./shmtst -s 10K
+Service Test             Num Ops   Time(usec)      Ops/Sec
+heap    wrt_sm_seq     207500415      5009677      4141992
+heap    rd_sm_seq      207500415      5010934      4140953
+sysvshm wrt_sm_seq     204500409      5011350      4080745
+sysvshm rd_sm_seq      201000402      5003166      4017464
+heap    wrt_sm_seq     206000412      5008681      4112867
+heap    rd_sm_seq      204000408      5007445      4073942
+sysvshm wrt_sm_seq     204000408      5002645      4077851
+sysvshm rd_sm_seq      207000414      5008670      4132842
+heap    wrt_sm_seq     206000412      5007495      4113842
+heap    rd_sm_seq      207000414      5001292      4138939
+sysvshm wrt_sm_seq     207500415      5006861      4144321
+sysvshm rd_sm_seq      207000414      5004566      4136231
+heap    wrt_sm_seq     207500415      5005852      4145157
+heap    rd_sm_seq      208000416      5010308      4151450
+sysvshm wrt_sm_seq     207500415      5005490      4145457
+sysvshm rd_sm_seq      207500415      5001347      4148891
+heap    wrt_sm_seq     207000414      5005642      4135342
+heap    rd_sm_seq      207000414      5003041      4137492
+sysvshm wrt_sm_seq     207500415      5008448      4143008
+sysvshm rd_sm_seq      207500415      5002841      4147652
+```
+
+##Platforms
+* Linux
+* OSX 10.8
 * Solaris
 
 #sizes.c
