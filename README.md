@@ -5,12 +5,23 @@ to justify a separate repo for each.  This includes:
 
 * binclock: bash script that displays a running clock in binary
 * errno.c: prompts for an errno number and prints the errno string
+* gendigs: performs dig against a list of zones and stores the results and packet captures
+* genzones: generate DNS zone files (BIND) to help ptu together autoritative servers for testing DNS related sofware - this is NOT for building production zones
 * getsolnics: prints a list of NICs on Solaris by querying kstat
+* getsyscfg: collects a pile of system config files from a remote host
 * ipaddr: shell script used to convert ip addresses to integers and back
 * memhog.c: used to stress the system by consuming memory
+* mkbakdt: bash function used to create a dated backup of a file and manage other backups of that file
+* mkdmg: create an OSX dmg (an aid to packaging)
+* mkusers: creating a list of users in bulk
 * mvuser: shell script that packages/unpackages user credentials for moving a user to a different host
+* nddget: Solaris script for fetching device configuration parameters
+* pinghosts: ping a list of hosts in a way that lends itself to monitoring
+* shmrm: remove all of the shared memory associate with a user
 * shmtst.c: exercise shared memory access for basic benchmarking
 * sizes.c: simple program to print the size (in bytes) of some fundamental data types
+* spincpu.c: make a machine busy
+* sshhosts: run a command via ssh on a list of hosts
 * stopwatch: bash script count up timer and countdown timer
 * whitelist: bash script that extracts addresses from a mail message and adds them to a whitelist
 
@@ -45,6 +56,9 @@ gwiley-reisende:gswsystools gwiley$ ./binclock -d
 * Solaris
 
 #errno.c
+
+Display the string associated with a specific errno number.  You could just take a
+look at the errno headers on your system, but sometimes that is a bit of a pain.
 
 ```
 gwiley-reisende:gswsystools gwiley$ ./errno

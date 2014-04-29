@@ -1,4 +1,7 @@
 #!/bin/bash
+# Glen Wiley <glen.wiley@gmail.com>
+#
+# TODO: break packet captures out separately to pair with each dig
 
 fn_doms=zonelist
 fn_cap=digs.cap
