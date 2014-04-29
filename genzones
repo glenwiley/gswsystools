@@ -1,0 +1,155 @@
+#!/bin/bash
+# Glen Wiley <gwiley@verisign.com>
+#
+# generate a large number of zones+confs that can be served authoritatively
+#
+# TODO: parametrize
+# TODO: limit zone name size
+# TODO: vary contents of zone, # RRs by parameter
+
+nzones=64000
+nrr_ns=2
+nsip=10.159.224.65
+suffix=65
+outdir=zones
+#fn_dict=/usr/share/dict/words
+fn_dict=words-lc
+
+#---------------------------------------- usage
+function usage
+{
+   echo "USAGE: genzones -d <dictionary> -n <numzones> -o <outdir> -s <suffix> -i <ns_ip>"
+   echo "-d  <dictionary> file name for dictionary"
+   echo "-i  <ns_ip>      IP address for name servers in the generated RR"
+   echo "-n  <numzones>   number of zones to generate (default=$nzones)"
+   echo "-o  <outdir>     dir to create zone files in (default=$outdir)"
+   echo "-s  <suffix>     suffix to attach to words to create each domain"
+ 
+} # usage
+
+while getopts "d:i:n:o:s:" opt
+do
+   case "$opt" in
+      d) fn_dict=$OPTARG;;
+      i) nsip=$OPTARG;;
+      n) nzones=$OPTARG;;
+      o) outdir=$OPTARG;;
+      s) suffix=$OPTARG;;
+      ?) usage; exit 1;
+   esac
+done
+
+fn_conf=named-$suffix-inc.conf
+fn_list=zonelist-$suffix
+pathtozones=$outdir
+tld=com
+fn_tld=$tld-$suffix.zone
+wordn=0
+
+echo "generating DNS zones"
+echo "number of zones: $nzones"
+echo "name server IP : $nsip"
+echo "dictionary file: $fn_dict"
+echo "zone list file : $fn_list"
+echo "named.conf file: $fn_conf"
+echo "path to zones  : $pathtozones"
+echo "TLD zone file  : $fn_tld"
+
+nwords=$(wc -l $fn_dict | cut -d " " -f 1,1)
+if [[ $nwords -lt $nzones ]]
+then
+	echo "dictionary has too few words, exiting."
+	exit 1
+fi
+
+if [ -d $pathtozones ]
+then
+	echo "please remove the zone directory at $pathtozones, exiting."
+	exit 1
+fi
+mkdir $pathtozones
+
+rm -f $fn_conf $fn_list $fn_tld
+
+exec 8<$fn_dict
+if [ $? -ne 0 ]
+then
+	echo "error, unable to open word list at $fn_dict"
+	exit 1
+fi
+
+# generate a zone name using a dictionary file
+function zonename
+{
+	read -u8 txt
+	echo "$txt$suffix"
+
+}
+
+echo "" >$fn_list
+exec 5>$fn_list
+exec 6>$fn_conf
+exec 7>$fn_tld
+
+cat <<-EOF >&7
+	\$ORIGIN $tld.
+	@ IN	SOA	a.gtld-servers.net. NSTLD.VERISIGN-GRS.COM. (
+		2006011101 1800 900 604800 86400 )
+	\$TTL 518400
+	@ NS A.GTLD-SERVERS.NET.
+	EOF
+
+for (( n=0; n<nzones; n++ ))
+do
+	zone="$(zonename).$tld"
+	fn_zone="$pathtozones/$zone.zone"
+
+	[ -e $fn_zone ] && continue
+
+	echo "$zone" >&5
+
+	cat <<-EOF >&6
+		zone "$zone" { type master; file "$fn_zone"; };
+	EOF
+
+	# write the zone file
+
+	cat <<-EOF > $fn_zone
+		\$ORIGIN $zone.
+		\$TTL 172800
+		@ IN	SOA	NS1.$zone. NSTLD.VERISIGN-GRS.COM. (
+			2006011101 1800 900 604800 86400 )
+		@ NS ns1
+		@ NS ns2
+		@ MX 10 mail
+		ns1  A $nsip
+		ns2  A $nsip
+		www  A $nsip
+		mail A $nsip
+		ftp  A $nsip
+	EOF
+
+	# add this zone to the TLD
+
+	cat <<-EOF >&7
+		$zone.  172800 IN NS ns1.$zone.
+		$zone.  172800 IN NS ns2.$zone.
+		ns1.$zone.  172800 IN A $nsip
+		ns2.$zone.  172800 IN A $nsip
+	EOF
+
+	p=$(( n % 1000 ))
+	if [ $p -eq 0 ]
+	then
+		echo -n "."
+	fi
+done
+
+exec 5>&-
+exec 6>&-
+exec 7>&-
+exec 8<&-
+
+echo "done."
+
+# end

@@ -1,0 +1,23 @@
+#!/bin/bash
+# Glen Wiley <gwiley@verisign.com>
+# $Id: nddget 194 2009-06-03 15:00:12Z gwiley $
+#
+# nddget - retrieve all of the device settings
+SCRIPTVER="1.0"
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+export PATH
+
+iface=/dev/bge0
+if [ $# -eq 1 ]
+then
+	iface=/dev/$1
+fi
+
+for p in $(ndd -get $iface \? | grep -v "\?" | sed 's/(.*//g')
+do
+	printf "%-15.15s  " $p
+	ndd -get $iface $p
+done
+
+# end

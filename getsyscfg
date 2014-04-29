@@ -1,0 +1,337 @@
+#!/bin/bash
+# getsyscfg
+# $HeadURL: https://cmsvn.vrsn.com/ats/ad/arch/systools/getsyscfg $
+# Glen Wiley <gwiley@verisign.com>
+#
+# fetch/install system configuration files
+#
+# ChangeLog
+# ---------
+# 2009.05.19 v2.12 gwiley   fixed -i that Tom had so brilliantly wrote
+# 2009.05.19 v2.11 gwiley   added v6 routes
+# 2009.05.14 v2.10 gwiley   added v6 output from commands
+# 2009.05.13 v2.9  gwiley   added quagga, fixed pattern for ifcfg
+# 2009.04.17 v2.8  gwiley   added sysctl, lsmod, path_to_inst, mount
+# 2009.04.08 v2.7  gwiley   
+# 2009.04.08 v2.6  gwiley   changed a few files in the list
+# 2009.03.31 v2.5  gwiley   added rpm/pkg list output
+# 2009.03.11       gwiley   added FS related files, setsyscfg files are explicit
+# 2009.03.10       gwiley   moved command output to /tmp/syscfg-cmds, added path
+# 2009.02.05       tsamburg added an install option (-i)
+# 2008.08.27       gwiley   fixed solaris support (sun tar)
+# 2008.07.30       gwiley   added inittab, securetty, fndate, dmidecode, smbios
+#
+
+SCRIPTVER="2.12"
+dircmds="/tmp/syscfg-cmds"
+prog="$0"
+
+echo "getsyscfg v$SCRIPTVER - Glen Wiley <gwiley@verisign.com>"
+echo ""
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+export PATH
+
+#---------------------------------------- usage
+function usage
+{
+	echo ""
+        echo "USAGE: getsyscfg [-i] [<filename>]"
+        echo "-i   copies configs from tar to host"
+        echo ""
+		  echo "With no options this will copy the host configuration to a tar"
+		  echo "that can later be used to exmaine or restore the configs."
+		  echo "if no file name is provided the default is hostname.tar.gz"
+        exit 1
+} # usage
+
+#---------------------------------------- getsyscfg
+
+function getsyscfg
+{
+	tarball=$1
+
+	flistLinux="\
+ 	/app/named/cfg/rdns.cfg \
+ 	/app/named/cfg/sdns_stats.conf \
+	/boot/grub/grub.conf \
+ 	/usr/local/etc/digger.conf \
+	$dircmds/* \
+ 	/etc/changelog \
+	/etc/fstab \
+ 	/etc/hosts \
+ 	/etc/inittab \
+	/etc/modprobe.d/* \
+	/etc/named.conf \
+ 	/etc/nsswitch.conf \
+ 	/etc/ntp.conf \
+ 	/etc/ntp/step-tickers \
+ 	/etc/quagga/* \
+ 	/etc/redhat-release \
+ 	/etc/resolv.conf \
+ 	/etc/sudoers \
+ 	/etc/sysctl.conf \
+ 	/etc/securetty \
+ 	/etc/sysconfig/network \
+ 	/etc/sysconfig/static-routes \
+ 	/etc/sysconfig/network-scripts/ifcfg-* \
+ 	/etc/sysconfig/network-scripts/route-eth[0-9] \
+ 	/etc/sysconfig/network-scripts/route6* \
+ 	/etc/zebra/* \
+ 	/etc/ssh/* \
+ 	/usr/lib/rsc/* \
+ 	"
+
+	flistSunOS="\
+	/boot/grub/menu.lst \
+	/boot/solaris/bootenv.rc \
+ 	$dircmds/* \
+ 	/etc/changelog \
+ 	/etc/defaultrouter \
+ 	/etc/hosts \
+ 	/etc/hostname.* \
+ 	/etc/inet/hosts \
+ 	/etc/inet/inodes \
+ 	/etc/inet/netmasks \
+ 	/etc/inet/networks \
+ 	/etc/init.d/static-routes \
+ 	/etc/init.d/staticroutes \
+ 	/etc/inittab \
+ 	/etc/nodename \
+ 	/etc/nsswitch.conf \
+ 	/etc/ntp.conf \
+ 	/etc/ntp/step-tickers \
+	/etc/path_to_inst \
+ 	/etc/release \
+	/etc/resolv.conf \
+ 	/etc/securetty \
+ 	/etc/sudoers \
+ 	/etc/system \
+ 	/etc/ssh/* \
+	/etc/vfstab \
+ 	/usr/lib/rsc/* \
+ 	"
+	
+	os=$(uname -s)
+	flist="flist$os"
+	flist="${!flist}"
+
+	#-------------------- capture some command output
+
+	rm -rf $dircmds
+	mkdir $dircmds
+
+	echo "getsyscfg $SCRIPTVER" > $dircmds/getsyscfg-date
+	date >> $dircmds/getsyscfg-date
+	cp $prog $dircmds
+
+	netstat -rn         > $dircmds/netstat-rn
+	netstat -Ainet6 -rn >> $dircmds/netstat-rn
+	uname -a            > $dircmds/uname-a
+	df -h               > $dircmds/df-h
+	ifconfig -a         > $dircmds/ifconfig-a
+	mount               > $dircmds/mount
+
+	if [ $os == "Linux" ]
+	then
+		/usr/sbin/dmidecode       >  $dircmds/dmidecode
+		/usr/sbin/ethtool eth0    >  $dircmds/ethtool-eth0
+		/usr/sbin/ethtool -i eth0 >> $dircmds/ethtool-eth0 2>&1
+		/usr/sbin/ethtool eth1    >  $dircmds/ethtool-eth1 2>&1
+		/usr/sbin/ethtool -i eth1 >> $dircmds/ethtool-eth1 2>&1
+		/sbin/sysctl -a           >  $dircmds/sysctl-a
+		/sbin/lsmod               >  $dircmds/lsmod
+		/sbin/fdisk -ls           >  $dircmds/fdisk-ls 2>&1
+		rpm -qa                   >  $dircmds/rpm-qa
+	fi
+
+	if [ $os == "SunOS" ]
+	then
+		/usr/sbin/smbios          >  $dircmds/smbios
+		/usr/sbin/dladm show-dev  >  $dircmds/dladm
+		/usr/sbin/dladm show-link >> $dircmds/dladm
+		/usr/bin/pkginfo          >  $dircmds/pkginfo
+		/usr/bin/pkginfo -l       >  $dircmds/pkginfo-l
+	fi
+
+	#-------------------- build the "include" list
+
+	fninc=/tmp/getsyscfg.$$
+	trap "rm -f $fninc" EXIT
+
+	for f in $flist
+	do
+		ls -1 $f 2>/dev/null | sed 's/^\///' >> $fninc
+	done
+
+	# figure out whether we are using gnu or sun tar
+
+	tar --version 2>/dev/null | grep -i gnu >/dev/null
+	if [ $? -eq 0 ]
+	then
+		gnutar="yes"
+	else
+		gnutar="no"
+	fi
+
+	fntar="$PWD/$(hostname).tar"
+	opwd=$PWD
+	cd /
+	if [ $gnutar == "yes" ]
+	then
+		tar -T $fninc -cf $fntar
+	else
+		tar -cf $fntar -I $fninc 
+	fi
+	cd $opwd
+	
+	rm -rf $dircmds
+	
+} # getsyscfg
+
+#---------------------------------------- setsyscfg
+
+function setsyscfg
+{
+	tarball=$1
+	flistLinux="\
+ 	/etc/hosts \
+ 	/etc/nsswitch.conf \
+ 	/etc/ntp.conf \
+ 	/etc/ntp/step-tickers \
+ 	/etc/resolv.conf \
+ 	/etc/sudoers \
+ 	/etc/sysctl.conf \
+ 	/etc/securetty \
+ 	/etc/sysconfig/network \
+ 	/etc/sysconfig/static-routes \
+ 	/etc/sysconfig/network-scripts/ifcfg-* \
+ 	/etc/sysconfig/network-scripts/route-eth[0-9] \
+ 	/etc/ssh/* \
+ 	/usr/lib/rsc/* \
+ 	"
+
+	flistSunOS="\
+ 	/etc/defaultrouter \
+ 	/etc/hosts \
+ 	/etc/hostname.* \
+ 	/etc/inet/hosts \
+ 	/etc/inet/inodes \
+ 	/etc/inet/netmasks \
+ 	/etc/inet/networks \
+ 	/etc/init.d/static-routes \
+ 	/etc/init.d/staticroutes \
+ 	/etc/nodename \
+ 	/etc/nsswitch.conf \
+ 	/etc/ntp.conf \
+ 	/etc/ntp/step-tickers \
+	/etc/resolv.conf \
+ 	/etc/securetty \
+ 	/etc/sudoers \
+ 	/etc/system \
+ 	/etc/ssh/* \
+ 	/usr/lib/rsc/* \
+ 	"
+	
+	os=$(uname -s)
+	flist="flist$os"
+	flist="${!flist}"
+
+	cur=`pwd`
+	os=$(uname -s)
+
+	rm -rf /tmp/setsyscfg
+	mkdir /tmp/setsyscfg
+	cd /tmp/setsyscfg
+	tar -xf $tarball
+	fninc=/tmp/setsyscfg/files
+
+	if [ $os == "Linux" ]
+	then
+		if [ ! -f etc/redhat-release ]
+		then
+			echo "You are trying to install on Linux but your original os was something different."
+			echo "The original config files are in /tmp/setsyscfg/etc/.  Please install manually."
+			exit
+		else
+			for f in $flist
+			do
+				src=${f#/}
+				ls -1 $src 2>/dev/null | sed 's/^\///' >> $fninc
+			done
+
+			for f in $(cat $fninc)
+			do
+				yes | cp -r $f /$f
+			done
+			service network restart
+		fi
+	fi
+
+	if [ $os == "SunOS" ]
+	then
+		if [ ! -f etc/release ]
+		then
+			echo "You are trying to install on Solaris but your original os was something differnt."
+			echo "The original config files are in /tmp/setsyscfg/etc/.  Please install manually."
+			exit
+		else
+			for f in $flist
+			do
+				src=${f#/}
+				ls -1 $src 2>/dev/null | sed 's/^\///' >> $fninc
+			done
+
+			for f in $(cat $fninc)
+			do
+				yes | cp -R $f /$f >/dev/null 2&>1
+			done
+			svcadm disable network/physical; svcadm enable network/physical
+		fi
+	fi
+} # setsyscfg
+
+#---------------------------------------- main
+
+hname=`hostname`
+fname="$(hostname).tar.gz"
+mode="get"
+
+while getopts "hi" opt
+do
+   case $opt in
+   	i) mode="set" ;;
+   	h) usage; exit 1;;
+		\?) usage; exit 1;;
+  	esac
+done
+
+OPTIND=$(( OPTIND - 1 ))
+shift $OPTIND
+if [ $# -gt 0 ]
+then
+	fname="$1"
+fi
+
+if [ "${fname%%/*}" == "${fname}" ]
+then
+	pwd=$(pwd)
+	fname="$pwd/$fname"
+fi
+
+if [[ "$mode" == "set" ]]
+then
+
+   if [ ! -f "$fname" ]
+   then
+      echo "$fname does not exist, exiting..."
+      exit 1;
+   fi
+   getsyscfg "pre-$fname"
+   setsyscfg $fname
+else
+	echo "Grabbing system information and creating a file called $fname"
+	getsyscfg $fname
+fi
+
+# end

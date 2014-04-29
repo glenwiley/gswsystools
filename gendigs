@@ -1,0 +1,34 @@
+#!/bin/bash
+
+fn_doms=zonelist
+fn_cap=digs.cap
+ns=10.159.224.65
+
+#---------------------------------------- usage
+function usage
+{
+   echo "USAGE: gendigs -c <cap_file> -l <zone_list> -n <name_server>"
+   echo "-c  <cap_file>    file to save network capture to (queries only)"
+   echo "-l  <zone_list>   list of zones to query"
+   echo "-n  <name_server> name server to send queries to"
+ 
+} # usage
+
+while getopts "c:l:n:" opt
+do
+   case "$opt" in
+      c) fn_cap=$OPTARG;;
+      l) fn_doms=$OPTARG;;
+      n) ns=$OPTARG;;
+      ?) usage; exit 1;
+   esac
+done
+
+echo "querying $ns from list in $fn_doms and saving queries to $fn_cap..."
+
+/usr/sbin/tcpdump -w $fn_cap -ieth0 dst port 53 &
+dig +nosearch +ignore +short +time=1 +tries=1 +retry=0 @$ns -f $fn_doms >/dev/null
+kill %1
+
+echo "done."
+# end

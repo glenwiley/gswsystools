@@ -1,0 +1,104 @@
+#!/bin/bash
+# gethealth
+# Glen Wiley <gwiley@verisign.com>
+# $Id: gethealth 233 2010-10-29 11:25:24Z gwiley $
+#
+# performs a tcp health check on hosts that support active LB health checks
+# by connecting to the TCP health check port
+#
+# TODO: add port 53/dig healthcheck
+SCRIPTVER=1.3
+
+# health check port number
+portn=2828
+hostpat="peHOSTNUM-qa1"
+nstart=0
+nend=0
+nincr=1
+timeout=1
+
+#---------------------------------------- usage
+function usage
+{
+	echo "gethealth v$SCRIPTVER - Glen Wiley <gwiley@verisign.com>"
+	echo ""
+   echo "USAGE: gethealth [-f <file>] [-p <portn>] [-P <pattern>] [-r<start>:<end>] [-i <incr>] [-t <timeout>] <hostnum> <hostnum>..."
+   echo "-f <file>         file containing a list of hosts to check"
+   echo "-p <portn>        port number to check, default=$portn"
+   echo "                  SDNS PE:  2828"
+   echo "                  WhoIs PE: 3828"
+   echo "-P <pattern>      replace HOSTNUM in this pattern with the host #"
+   echo "                  default=$hostpat"
+   echo "-r <start>:<end>  check hosts starting with number <start>"
+   echo "-i <incr>         increment value when used with -r"
+   echo "                  default=$nincr"
+   echo "-t <timeout>      seconds to wait before giving up, default=$timeout"
+   echo ""
+   echo ""
+   echo "ATLAS health for hosts numbers identified through options and listed"
+   echo "explicitly on the command line will be queried for health."
+} # usage
+
+if [ $# -eq 0 ]
+then
+   usage
+   exit 1
+fi
+
+#---------------------------------------- main
+while getopts "hf:i:p:P:r:t:" opt
+do
+   case "$opt" in
+      f) fnhosts="$OPTARG";;
+      i) nincr=$OPTARG;;
+      p) portn=$OPTARG;;
+      P) hostpat="$OPTARG";;
+      r) nstart=${OPTARG%%:*}; nend=${OPTARG##*:};;
+      t) timeout="$OPTARG";;
+      ?) usage; exit 1;;
+   esac
+done
+
+hostlist=""
+
+# start the host list with any that were specified on the command line
+
+OPTIND=$(( OPTIND - 1 ))
+shift $OPTIND
+while [ $# -gt 0 ]
+do
+   hostlist="$hostlist $1"
+   shift
+done
+
+# add hosts to the host list that were specified using number ranges
+
+if [ $nend -gt 0 ]
+then
+	for (( n=nstart; n<=nend; n=n+nincr ))
+	do
+   	hostlist="$hostlist ${hostpat/HOSTNUM/$n}"
+	done
+fi
+
+# add hosts that were specified using a list file
+
+if [ ! -z $fnhosts ]
+then
+	[ ! -f $fnhosts ] && echo "host list file $fnhosts does not exist, exiting" && exit 1
+   hostlist="$hostlist $(cat $fnhosts)"
+fi
+
+for h in $hostlist
+do
+   if [ $timeout -gt 0 ]
+   then
+   	status=$(nc -w $timeout $h $portn)
+	else
+   	status=$(nc $h $portn)
+	fi
+   [ $? -ne 0 ] && status="ERROR"
+   echo "$h $status" 
+done
+
+# gethealth

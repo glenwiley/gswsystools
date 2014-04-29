@@ -1,0 +1,107 @@
+#!/bin/bash
+# $HeadURL$
+# $Id$
+# Glen Wiley <gwiley@verisign.com>
+#
+# run an ssh command on all hosts listed in a file
+
+SCRIPTVER="1.2"
+
+PATH=/bin:/usr/bin:/usr/local/bin:/sbin:/usr/sbin:/usr/local/sbin
+export PATH
+
+cmdlogdir=./cmdlog
+fnerrs="ssherrs"
+
+#-------------------- function: usage
+function usage
+{
+	echo "sshhosts v$SCRIPTVER - Glen Wiley <gwiley@verisign.com>"
+	echo ""
+	echo "\nUSAGE: sshhosts [-qv] [-e <err_hosts>] [-d <output_dir>] [-l <user>] <hostsfile> <command>\n"
+	echo "<host_file>      hosts to run on, one hostname per line"
+	echo "<command>        command to execute via ssh"
+	echo "-d <output_dir>  write the output to files named <host>.out"
+	echo "                 in the designated directory (default: $cmdlogdir)"
+	echo "-q               run quietly (some error output is still produced"
+	echo "-l <user>        run ssh <user>@<host>"
+	echo "-v               be verbose"
+	echo "-e <err_hosts>   write list of hosts with connection errors to this file"
+	echo "                 default=$fnerrs"
+	echo ""
+	echo "Netcat is used to test for a connection to port 22 before running the"
+	echo "command."
+	echo "Password authentication is disabled (we expect this to be run on a"
+	echo "large set of hosts)."
+} # usage
+
+[[ ! -z $fnerrs ]] && echo -n "" > $fnerrs
+
+#-------------------- process command line
+
+if [ "$#" == "0" ]
+then
+	usage
+	exit 1
+fi
+
+while getopts "d:e:l:qv" opt
+do
+	if [[ "$opt"  == ":" || "$opt" == "?" ]]
+	then
+		usage
+		exit 1
+	fi
+
+	case "$opt" in
+		d) cmdlogdir="$OPTARG";;
+		e) fnerrs="$OPTARG";;
+		l) user="$OPTARG";;
+		q) quiet="yes";;
+		v) verbose="yes";;
+	esac
+done
+
+# with the options out of the way we will
+# pick up the remaining arguments
+let OPTIND=OPTIND-1
+shift $OPTIND
+
+hostfile=$1
+cmd=$2
+if [[ $# -ne 2 || ! -e $hostfile ]]
+then
+	usage
+	exit 1
+fi
+
+#-------------------- the real work starts here
+
+[[ ! -d $cmdlogdir ]] && mkdir $cmdlogdir
+if [ ! -d $cmdlogdir ]
+then
+	[[ -z "$quiet" ]] && echo "no command log directory: $cmdlogdir"
+	exit 1
+fi
+
+[[ ! -z "$verbose" ]] && echo "writing logs to $cmdlogdir"
+
+[[ ! -z "$user" ]] && user="$user@"
+
+for h in $(cat $hostfile)
+do
+	[[ -z "$quiet" ]] && echo -n "sshhosts: $h"
+	nc -w 1 -z $h 22 >/dev/null 2>/dev/null
+	if [ $? -eq 0 ]
+	then
+		[[ -z "$quiet" ]] && echo ""
+		[[ ! -z "$verbose" ]] && echo "ssh -o PasswordAuthentication=no $user$h "$cmd" 2>&1 > $cmdlogdir/$h.out"
+		ssh -o PasswordAuthentication=no $user$h "$cmd" 2>&1 > $cmdlogdir/$h.out
+		[[ $? -ne 0 ]] && echo "$h" >> $fnerrs
+	else
+		[[ -z "$quiet" ]] && echo "  UNABLE TO CONNECT"
+		[[ ! -z "$fnerrs" ]] && echo "$h" >> $fnerrs
+	fi
+done
+
+# end sshhosts

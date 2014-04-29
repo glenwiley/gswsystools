@@ -1,0 +1,94 @@
+#!/bin/bash
+# Glen Wiley <gwiley@verisign.com>
+#
+# create users from a file that has rows 
+#  G GNAME GID
+#  U UNAME UID GID GID,GID,... HOMEDIR
+# TODO: some file syntax checking
+
+SCRIPTVER="v1.2"
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+export PATH
+
+#---------------------------------------- usage
+function usage
+{
+	echo "USAGE: mkusers -p <password> -f <userlist>"
+	echo "-f <userlist>  list of group and user names to create"
+	echo "               the file has lines that look like:"
+	echo "               G <GNAME> <GID>"
+	echo "               U <UNAME> <GID> <GID1>,<GID2>,... HOMEDIR"
+	echo "-p <password>  password to assign to the users"
+	exit 1
+} # usage
+
+#-------------------- handle command line
+
+echo "mkusers $SCRIPTVER - Glen Wiley <gwiley@verisign.com>"
+
+fn=""
+passwd="abc123"
+
+while getopts "f:p:" opt
+do
+	case "$opt" in
+		f) fn="$OPTARG";;
+		p) passwd="$OPTARG";;
+		?) usage; exit 1;
+	esac
+done
+
+[ ! -s "$fn" ] && echo "no user file specified, use -f, exiting..." && exit 1
+[ ! -f $fn ] && echo "user file not readable, exiting..." && exit 1
+
+#-------------------- add groups
+
+grep -i "^g " $fn | while read txt
+do
+	set -- $txt
+	echo -n "group: $2 ($3)..."
+	groupadd -g $3 $2 2>/dev/null
+	if [ $? -eq 0 ]
+	then
+		echo "added"
+	else
+		echo "not added"
+	fi
+done
+
+#-------------------- add users
+
+grep -i "^u" $fn | while read txt
+do
+	set -- $txt
+	uname=$2
+	uid=$3
+	gid=$4
+	grps=$5
+	hdir=$6
+	hd=$(dirname $hdir)
+	echo -n "user: $uname..."
+
+	[ ! -d $hd ] && mkdir -p $hd && chmod a+rx $hd
+	useradd -u $uid -g $gid -G $grps -d $hdir -m -s /bin/bash $uname
+	if [ $? -eq 0 ]
+	then
+		echo "added"
+	else
+		echo "not added"
+	fi
+
+	if [ ! -s "$uname" ]
+	then
+		passwd $uname <<-EOF 2>/dev/null
+		$passwd
+		$passwd
+		EOF
+	fi
+
+	mkdir $hdir/.ssh
+	chown $uname:$gid $hdir/.ssh
+done
+
+# end mkuser

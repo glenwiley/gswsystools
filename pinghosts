@@ -1,0 +1,101 @@
+#!/bin/bash
+# $Id: pinghosts 199 2009-07-21 13:15:37Z gwiley $
+# Glen Wiley <gwiley@verisign.com>
+#
+# ping each of the hosts listed in files or on command line
+#
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+export PATH
+
+hostpat="peHOSTNUM-qai"
+nstart=0
+nend=0
+nincr=1
+
+os=$(uname -s)
+
+#---------------------------------------- usage
+function usage
+{
+   echo "USAGE: pinghosts [-f <file>] [-p <pattern>] [-r<start>:<end>] [-i <incr>] [-t <seconds>] <hostnum> <hostnum>..."
+   echo "-f <file>         file containing a list of hosts to ping"
+   echo "-p <pattern>      replace HOSTNUM in this pattern with the host #"
+   echo "                  default=$hostpat"
+   echo "-r <start>:<end>  ping hosts starting with number <start>"
+   echo "-i <incr>         increment value when used with -r"
+   echo "                  default=$nincr"
+	echo "-t <seconds>      seconds timeout, defaul depends on system"
+   echo ""
+   echo ""
+} # usage
+
+if [ $# -eq 0 ]
+then
+   usage
+   exit 1
+fi
+
+#---------------------------------------- main
+while getopts "hf:i:p:r:t:" opt
+do
+   case "$opt" in
+      f) fnhosts="$OPTARG";;
+      i) ninct=$OPTARG;;
+      p) hostpat="$OPTARG";;
+      r) nstart=${OPTARG%%:*}; nend=${OPTARG##*:};;
+		t) tout="-W $OPTARG";;
+      ?) usage; exit 1;;
+   esac
+done
+
+hostlist=""
+
+# start the host list with any that were specified on the command line
+
+OPTIND=$(( OPTIND - 1 ))
+shift $OPTIND
+while [ $# -gt 0 ]
+do
+   hostlist="$hostlist $1"
+   shift
+done
+
+# add hosts to the host list that were specified using number ranges
+
+if [ $nend -gt 0 ]
+then
+	for (( n=nstart; n<=nend; n=n+nincr ))
+	do
+   	hostlist="$hostlist ${hostpat/HOSTNUM/$n}"
+	done
+fi
+
+# add hosts that were specified using a list file
+
+if [ ! -z $fnhosts ]
+then
+	[ ! -f $fnhosts ] && echo "host list file $fnhosts does not exist, exiting" && exit 1
+   hostlist="$hostlist $(grep -v '^#' $fnhosts)"
+fi
+
+for h in $hostlist
+do
+	if [ "$os" == "SunOS" ]
+	then
+		ping $h > /dev/null
+	else
+		ping $tout -c 1 $h > /dev/null
+	fi
+
+	if [ $? -eq 0 ]
+	then
+		status="ok"
+	else
+		status="NORESP"
+	fi
+
+   echo "$h $status" 
+done
+
+# pinghosts

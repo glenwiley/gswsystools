@@ -1,0 +1,38 @@
+#---------------------------------------- mkbakdt
+# gwiley@verisign.com
+# create a dated backup of the specified file, if the date already exists
+# then don't write over it (no backup is made)
+# keeps maxnum backups - older ones matching the file name are removed
+# returns 0 if backup made successfully
+function mkbakdt
+{
+	fnsrc="$1"
+	dt=$(date "+%Y%m%d")
+	fnbak="$fnsrc-$dt"
+	maxnum=7
+	retval=0
+
+	if [ ! -f "$fnsrc" ]
+	then
+		retval=2
+	fi
+
+	if [ ! -f "$fnbak" ]
+	then
+		cp -p $fnsrc $fnbak
+		retval=$?
+	fi
+
+	if [ $retval -eq 0 ]
+	then
+		n=$(ls -1 | grep -E "^$fnsrc-[0-9]{8}" | wc -l)
+		n=$(( n - maxnum ))
+		if [ $n -gt 0 ]
+		then
+			flist=$(ls -1 | grep -E "^$fnsrc-[0-9]{8}" | head -$n)
+			rm -f $flist
+		fi
+	fi
+
+	return $retval
+} # mkbakdt

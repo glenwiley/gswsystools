@@ -1,0 +1,47 @@
+#!/bin/bash
+# Glen Wiley <gwiley@verisign.com>
+#
+# remove all SYSV IPC shared memory owned by the specified user
+
+function usage {
+	echo "USAGE: shmrm [-ft] [-u <user>]"
+	echo ""
+	echo "Removes all SYSV IPC shared memory owned by the specified user."
+	echo ""
+	echo "-t         test but don't actually remove"
+	echo "-u <user>  remove only for specified owner, default = all users"
+}
+
+testonly="n"
+owner=""
+
+while getopts "tu:" opt
+do
+	case "$opt" in
+		u) owner="$OPTARG";;
+		t) testonly="y";;
+		?) usage; exit 1;
+	esac
+done
+
+ipcs -m | grep "^0x" | while read txt
+do
+	set -- $txt
+	segid="$2"
+	segowner="$3"
+
+	if [[ "$owner" != "" && "$owner" != "$segowner" ]]
+	then
+		continue
+	fi
+
+	echo "remove segment id $segid"
+	if [ "$testonly" == "y" ]
+	then
+		echo "TEST MODE, SEGMENT NOT REMOVED"
+	else
+		echo "ipcrm -m $segid"
+	fi
+done
+
+# shmrm
